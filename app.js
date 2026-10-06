@@ -7,7 +7,7 @@
  const actors = new Map(data.actors.map(a => [a.id, a]));
  const sources = new Map(data.sources.map(s => [s.id, s]));
  const colors = {Danmark:"#78b8ff",Allierede:"#b0a1f0","NATO / multinationalt":"#69d7e3"};
- const state = {geo:"Alle",topics:new Set(),query:"",concepts:true,uncertain:true,selected:"battlelab",view:"map",list:window.matchMedia?.('(max-width:760px)').matches||false,box:[0,0,1240,800]};
+ const state = {geo:"Alle",topics:new Set(),query:"",concepts:true,uncertain:true,selected:"battlelab",view:"map",list:window.matchMedia?.('(max-width:760px)').matches||false,box:[0,0,1240,890]};
  const activeRelations = () => data.relations.filter(r => state.concepts || r.kind === "documented");
  function matchingActors(){
   return data.actors.filter(a => a.id === "battlelab" || ((state.geo === "Alle" || a.geo === state.geo) && (!state.topics.size || a.topics.some(t => state.topics.has(t))) && (state.uncertain || a.status !== "unverified") && (!state.query || normal([a.name,a.short,a.country,a.role,...a.topics].join(" ")).includes(normal(state.query)))));
@@ -15,7 +15,7 @@
  function visibleRelations(){const ids=new Set(matchingActors().map(a=>a.id));return activeRelations().filter(r=>ids.has(r.a)&&ids.has(r.b));}
  function evidenceBadge(kind){return kind==="concept"?'<span class="pill warning">Konceptgrundlag · planlagt</span>':'<span class="pill good">Offentligt dokumenteret</span>';}
  function sourceLink(id){const s=sources.get(id);if(!s)return "";return s.url?`<a class="source-inline" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`:`<span class="source-inline">${esc(s.title)}<br><small>Internt dokument · fuld tekst ikke indlejret</small></span>`;}
- function actorBadge(a){return a.status==="planned"?'<span class="pill warning">Åbner 1. november 2026 · brugerbekræftet</span>':a.status==="unverified"?'<span class="pill warning">Uafklaret</span>':a.status==="concept"?'':'<span class="pill good">Rolle kildeunderbygget</span>';}
+ function actorBadge(a){return a.status==="planned"?'<span class="pill warning">Åbner 1. november 2026 · brugerbekræftet</span>':a.status==="unverified"?'<span class="pill warning">Uafklaret</span>':a.status==="concept"?'':a.sources.length&&a.sources.every(id=>sources.get(id)?.kind==='Brugeroplysning')?'<span class="pill warning">Brugeroplyst · ikke efterprøvet</span>':'<span class="pill good">Rolle kildeunderbygget</span>';}
  // På smalle skærme ligger detaljepanelet under indholdet; rul det frem, så valget kan ses.
  function revealDetail(){const d=$("detail"),r=d.getBoundingClientRect();if(r.top>window.innerHeight-80||r.bottom<80)d.scrollIntoView({behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
  function bindActorButtons(root){root.querySelectorAll("[data-actor]").forEach(b=>b.addEventListener("click",()=>{selectActor(b.dataset.actor);if(root!==$("detail"))revealDetail();}));}
@@ -32,7 +32,7 @@
   const marker=a.status==="unverified"?"?":a.type==="Ramme"?"RAMME":a.type==="Program"?"PROGRAM":a.country;
   return `<g class="${classes}" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Vis ${esc(a.name)}${a.status==='unverified'?', uafklaret':''}" transform="translate(${a.x-w/2},${a.y-h/2})"><rect width="${w}" height="${h}" rx="${hub?12:7}"/><circle cx="14" cy="${hub?25:18}" r="3" fill="${hub?'#5ae1b8':a.status==='unverified'?'#e6b866':colors[a.geo]}"/><text class="${hub?'title':''}" x="${hub?25:24}" y="${hub?47:28}">${esc(a.short)}</text><text class="node-meta" x="${hub?25:24}" y="${hub?75:49}">${esc(hub?'Operativ effekt · test & udvikling':marker)}</text></g>`;
  }
- const zones=[{x:24,y:30,w:450,h:425,label:"DANSKE FORSVARSMILJØER"},{x:540,y:30,w:676,h:395,label:"DANSK TEKNOLOGI & FORSKNING",path:"M554 30H1202Q1216 30 1216 44V411Q1216 425 1202 425H780Q766 425 766 411V369Q766 355 752 355H554Q540 355 540 341V44Q540 30 554 30Z"},{x:24,y:460,w:450,h:315,label:"ALLIEREDE & INNOVATIONSINDGANGE"},{x:766,y:460,w:450,h:315,label:"NATO · ORGANISATIONER & RAMMER"}];
+ const zones=[{x:24,y:30,w:450,h:425,label:"DANSKE FORSVARSMILJØER"},{x:540,y:30,w:676,h:485,label:"DANSK TEKNOLOGI & FORSKNING",path:"M554 30H1202Q1216 30 1216 44V501Q1216 515 1202 515H780Q766 515 766 501V369Q766 355 752 355H554Q540 355 540 341V44Q540 30 554 30Z"},{x:24,y:550,w:450,h:315,label:"ALLIEREDE & INNOVATIONSINDGANGE"},{x:766,y:550,w:450,h:315,label:"NATO · ORGANISATIONER & RAMMER"}];
  // Zoneoverskrifterne er også (svagere) forhindringer, så linjer helst ikke krydser teksten.
  const labelBoxes=zones.map((z,i)=>["label"+i,{x0:z.x+8,y0:z.y+6,x1:z.x+24+z.label.length*11.5,y1:z.y+34}]);
  const nodeBox=a=>{const hub=a.id==="battlelab",w=hub?226:202,h=hub?106:64,pad=8;return {x0:a.x-w/2-pad,y0:a.y-h/2-pad,x1:a.x+w/2+pad,y1:a.y+h/2+pad};};
@@ -125,7 +125,7 @@
   document.querySelectorAll('[data-view]').forEach(b=>{const on=b.dataset.view===view;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
   for(const key of ['map','paths','overlap','sources'])$(key+'View').hidden=key!==view;
  }
- function zoom(factor,fx=.5,fy=.5){const [x,y,w,h]=state.box,nw=Math.max(420,Math.min(2100,w*factor)),nh=nw*800/1240;state.box=[x+(w-nw)*fx,y+(h-nh)*fy,nw,nh];$('graph').setAttribute('viewBox',state.box.join(' '));}
+ function zoom(factor,fx=.5,fy=.5){const [x,y,w,h]=state.box,nw=Math.max(420,Math.min(2100,w*factor)),nh=nw*890/1240;state.box=[x+(w-nw)*fx,y+(h-nh)*fy,nw,nh];$('graph').setAttribute('viewBox',state.box.join(' '));}
  $('search').addEventListener('input',e=>{state.query=e.target.value.trim();update();});
  $('concepts').addEventListener('change',e=>{state.concepts=e.target.checked;update();});
  $('uncertain').addEventListener('change',e=>{state.uncertain=e.target.checked;update();});
@@ -136,7 +136,7 @@
  $('findPath').addEventListener('click',renderPaths);
  $('pathFrom').addEventListener('change',renderPaths);$('pathTo').addEventListener('change',renderPaths);
  $('overlapTopic').innerHTML=data.topics.map(t=>`<option>${esc(t)}</option>`).join('');$('overlapTopic').addEventListener('change',renderOverlap);
- $('zoomIn').addEventListener('click',()=>zoom(.8));$('zoomOut').addEventListener('click',()=>zoom(1.25));$('fit').addEventListener('click',()=>{state.box=[0,0,1240,800];renderMap();});
+ $('zoomIn').addEventListener('click',()=>zoom(.8));$('zoomOut').addEventListener('click',()=>zoom(1.25));$('fit').addEventListener('click',()=>{state.box=[0,0,1240,890];renderMap();});
  let drag=null;
  $('graph').addEventListener('pointerdown',e=>{if(e.target.closest('.node,[data-relation]'))return;drag={x:e.clientX,y:e.clientY,box:[...state.box]};$('graph').setPointerCapture(e.pointerId);});
  $('graph').addEventListener('pointermove',e=>{if(!drag)return;const r=$('graph').getBoundingClientRect(),scale=Math.max(drag.box[2]/r.width,drag.box[3]/r.height);state.box=[drag.box[0]-(e.clientX-drag.x)*scale,drag.box[1]-(e.clientY-drag.y)*scale,drag.box[2],drag.box[3]];$('graph').setAttribute('viewBox',state.box.join(' '));});
