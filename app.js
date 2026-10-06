@@ -16,7 +16,9 @@
  function evidenceBadge(kind){return kind==="concept"?'<span class="pill warning">Konceptgrundlag · planlagt</span>':'<span class="pill good">Offentligt dokumenteret</span>';}
  function sourceLink(id){const s=sources.get(id);if(!s)return "";return s.url?`<a class="source-inline" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`:`<span class="source-inline">${esc(s.title)}<br><small>Internt dokument · fuld tekst ikke indlejret</small></span>`;}
  function actorBadge(a){return a.status==="planned"?'<span class="pill warning">Åbner 1. november 2026 · brugerbekræftet</span>':a.status==="unverified"?'<span class="pill warning">Uafklaret</span>':a.status==="concept"?'<span class="pill warning">Rolle fra konceptgrundlag</span>':'<span class="pill good">Rolle kildeunderbygget</span>';}
- function bindActorButtons(root){root.querySelectorAll("[data-actor]").forEach(b=>b.addEventListener("click",()=>selectActor(b.dataset.actor)));}
+ // På smalle skærme ligger detaljepanelet under indholdet; rul det frem, så valget kan ses.
+ function revealDetail(){const d=$("detail"),r=d.getBoundingClientRect();if(r.top>window.innerHeight-80||r.bottom<80)d.scrollIntoView({behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
+ function bindActorButtons(root){root.querySelectorAll("[data-actor]").forEach(b=>b.addEventListener("click",()=>{selectActor(b.dataset.actor);if(root!==$("detail"))revealDetail();}));}
  function renderFilters(){
   $("geography").innerHTML=["Alle","Danmark","Allierede","NATO / multinationalt"].map(g=>`<button data-geo="${esc(g)}" aria-pressed="${state.geo===g}" class="${state.geo===g?'active':''}">${esc(g)}</button>`).join("");
   $("topics").innerHTML=data.topics.map(t=>`<button data-topic="${esc(t)}" aria-pressed="${state.topics.has(t)}" class="${state.topics.has(t)?'active':''}">${esc(t)}</button>`).join("");
@@ -30,19 +32,33 @@
   const marker=a.status==="unverified"?"?":a.type==="Ramme"?"RAMME":a.type==="Program"?"PROGRAM":a.country;
   return `<g class="${classes}" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Vis ${esc(a.name)}${a.status==='unverified'?', uafklaret':''}" transform="translate(${a.x-w/2},${a.y-h/2})"><rect width="${w}" height="${h}" rx="${hub?12:7}"/><circle cx="14" cy="${hub?25:18}" r="3" fill="${hub?'#5ae1b8':a.status==='unverified'?'#e6b866':colors[a.geo]}"/><text class="${hub?'title':''}" x="${hub?25:24}" y="${hub?47:28}">${esc(a.short)}</text><text class="node-meta" x="${hub?25:24}" y="${hub?75:49}">${esc(hub?'Operativ effekt · test & udvikling':marker)}</text></g>`;
  }
- function edgeSvg(r){
+ const zones=[{x:24,y:30,w:450,h:425,label:"DANSKE FORSVARSMILJØER"},{x:540,y:30,w:676,h:395,label:"DANSK TEKNOLOGI & FORSKNING",path:"M554 30H1202Q1216 30 1216 44V411Q1216 425 1202 425H780Q766 425 766 411V369Q766 355 752 355H554Q540 355 540 341V44Q540 30 554 30Z"},{x:24,y:460,w:450,h:315,label:"ALLIEREDE & INNOVATIONSINDGANGE"},{x:766,y:460,w:450,h:315,label:"NATO · ORGANISATIONER & RAMMER"}];
+ // Zoneoverskrifterne er også (svagere) forhindringer, så linjer helst ikke krydser teksten.
+ const labelBoxes=zones.map((z,i)=>["label"+i,{x0:z.x+8,y0:z.y+6,x1:z.x+24+z.label.length*11.5,y1:z.y+34}]);
+ const nodeBox=a=>{const hub=a.id==="battlelab",w=hub?226:202,h=hub?106:64,pad=8;return {x0:a.x-w/2-pad,y0:a.y-h/2-pad,x1:a.x+w/2+pad,y1:a.y+h/2+pad};};
+ const curveOffsets=[0];for(let c=35;c<=315;c+=35)curveOffsets.push(c,-c);
+ // Vælg den mindst krumme kurve, der ikke løber ind under andre aktørers bokse.
+ function routeEdge(r,boxes){
+  const a=actors.get(r.a),b=actors.get(r.b),dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy)||1,nx=-dy/distance,ny=dx/distance;
+  const preferred=parseInt(r.id.slice(1),10)%2===0?1:-1;let best=null;
+  for(const offset of curveOffsets){
+   const c=offset*preferred,cx=(a.x+b.x)/2+nx*c,cy=(a.y+b.y)/2+ny*c;let hits=0;
+   for(const [id,box] of boxes){if(id===r.a||id===r.b)continue;for(let t=.04;t<.97;t+=.03){const u=1-t,px=u*u*a.x+2*u*t*cx+t*t*b.x,py=u*u*a.y+2*u*t*cy+t*t*b.y;if(px>box.x0&&px<box.x1&&py>box.y0&&py<box.y1){hits+=id.startsWith("label")?.25:1;break;}}}
+   const cost=hits*1000+Math.abs(offset);if(!best||cost<best.cost)best={cost,d:`M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`};if(!hits)break;
+  }
+  return best.d;
+ }
+ function edgeSvg(r,d){
   const a=actors.get(r.a),b=actors.get(r.b);const relevant=r.a===state.selected||r.b===state.selected;
-  const dx=b.x-a.x,dy=b.y-a.y, distance=Math.hypot(dx,dy)||1;
-  const curve=(parseInt(r.id.slice(1),10)%2===0?1:-1)*Math.min(45,distance*.09);
-  const d=`M${a.x},${a.y} Q${(a.x+b.x)/2-dy/distance*curve},${(a.y+b.y)/2+dx/distance*curve} ${b.x},${b.y}`;
   return `<g data-relation="${esc(r.id)}"><path class="edge-hit" d="${d}" aria-hidden="true"/><path class="edge ${r.kind} ${relevant?'focused':state.selected!=='battlelab'?'dim':''}" d="${d}" tabindex="0" role="button" aria-label="${esc(a.short+' og '+b.short+': '+r.label+(r.kind==='concept'?', konceptgrundlag':''))}"/></g>`;
  }
  function renderMap(){
   const list=matchingActors(),rels=visibleRelations();
   $("stats").innerHTML=`<strong>${data.actors.length}</strong> aktører<br><strong>${data.relations.length}</strong> relationer i grundlaget`;
   $("mapCount").textContent=`${list.length} aktører vist · ${rels.length} relationer${state.topics.size?' · fagområder kombineres med ELLER':''}`;
-  $("zones").innerHTML=[{x:24,y:30,w:450,h:425,label:"DANSKE FORSVARSMILJØER"},{x:540,y:30,w:676,h:325,label:"DANSK TEKNOLOGI & FORSKNING"},{x:24,y:460,w:450,h:315,label:"ALLIEREDE & INNOVATIONSINDGANGE"},{x:766,y:460,w:450,h:315,label:"NATO · ORGANISATIONER & RAMMER"}].map(z=>`<rect class="zone-box" x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="14"/><text class="zone-label" x="${z.x+16}" y="${z.y+25}">${z.label}</text>`).join("");
-  $("edges").innerHTML=rels.map(edgeSvg).join("");
+  $("zones").innerHTML=zones.map(z=>`${z.path?`<path class="zone-box" d="${z.path}"/>`:`<rect class="zone-box" x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="14"/>`}<text class="zone-label" x="${z.x+16}" y="${z.y+25}">${z.label}</text>`).join("");
+  const boxes=[...list.map(a=>[a.id,nodeBox(a)]),...labelBoxes];
+  $("edges").innerHTML=rels.map(r=>edgeSvg(r,routeEdge(r,boxes))).join("");
   $("nodes").innerHTML=list.map(nodeSvg).join("");
   $("nodes").querySelectorAll(".node").forEach(n=>{n.addEventListener("click",()=>selectActor(n.dataset.id));n.addEventListener("keydown",e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectActor(n.dataset.id);}});});
   $("edges").querySelectorAll("[data-relation]").forEach(n=>{n.addEventListener("click",()=>showRelation(n.dataset.relation));n.addEventListener("keydown",e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showRelation(n.dataset.relation);}});});
@@ -99,16 +115,17 @@
  }
  function switchView(view){
   if(!['map','paths','overlap','sources'].includes(view))throw new Error('Ukendt visning');state.view=view;
-  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===view)));
+  document.querySelectorAll('[data-view]').forEach(b=>{const on=b.dataset.view===view;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
   for(const key of ['map','paths','overlap','sources'])$(key+'View').hidden=key!==view;
  }
- function zoom(factor){const [x,y,w,h]=state.box,nw=Math.max(420,Math.min(2100,w*factor)),nh=nw*800/1240;state.box=[x+(w-nw)/2,y+(h-nh)/2,nw,nh];$('graph').setAttribute('viewBox',state.box.join(' '));}
+ function zoom(factor,fx=.5,fy=.5){const [x,y,w,h]=state.box,nw=Math.max(420,Math.min(2100,w*factor)),nh=nw*800/1240;state.box=[x+(w-nw)*fx,y+(h-nh)*fy,nw,nh];$('graph').setAttribute('viewBox',state.box.join(' '));}
  $('search').addEventListener('input',e=>{state.query=e.target.value.trim();update();});
  $('concepts').addEventListener('change',e=>{state.concepts=e.target.checked;update();});
  $('uncertain').addEventListener('change',e=>{state.uncertain=e.target.checked;update();});
  $('reset').addEventListener('click',()=>{state.geo='Alle';state.topics.clear();state.query='';state.concepts=true;state.uncertain=true;state.selected='battlelab';$('search').value='';$('concepts').checked=true;$('uncertain').checked=true;update();});
  $('listToggle').addEventListener('click',()=>{state.list=!state.list;renderMap();});
- document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+ const tabs=[...document.querySelectorAll('[data-view]')];
+ tabs.forEach((b,i)=>{b.addEventListener('click',()=>switchView(b.dataset.view));b.addEventListener('keydown',e=>{const step={ArrowRight:1,ArrowLeft:-1}[e.key];const target=step?tabs[(i+step+tabs.length)%tabs.length]:e.key==='Home'?tabs[0]:e.key==='End'?tabs[tabs.length-1]:null;if(!target)return;e.preventDefault();switchView(target.dataset.view);target.focus();});});
  $('findPath').addEventListener('click',renderPaths);
  $('pathFrom').addEventListener('change',renderPaths);$('pathTo').addEventListener('change',renderPaths);
  $('overlapTopic').innerHTML=data.topics.map(t=>`<option>${esc(t)}</option>`).join('');$('overlapTopic').addEventListener('change',renderOverlap);
@@ -116,8 +133,10 @@
  let drag=null;
  $('graph').addEventListener('pointerdown',e=>{if(e.target.closest('.node,[data-relation]'))return;drag={x:e.clientX,y:e.clientY,box:[...state.box]};$('graph').setPointerCapture(e.pointerId);});
  $('graph').addEventListener('pointermove',e=>{if(!drag)return;const r=$('graph').getBoundingClientRect(),scale=Math.max(drag.box[2]/r.width,drag.box[3]/r.height);state.box=[drag.box[0]-(e.clientX-drag.x)*scale,drag.box[1]-(e.clientY-drag.y)*scale,drag.box[2],drag.box[3]];$('graph').setAttribute('viewBox',state.box.join(' '));});
+ $('graph').addEventListener('wheel',e=>{e.preventDefault();const g=$('graph'),r=g.getBoundingClientRect(),m=g.getScreenCTM();if(!m)return;const pt=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse()),[x,y,w,h]=state.box;zoom(e.deltaY>0?1.12:1/1.12,(pt.x-x)/w,(pt.y-y)/h);},{passive:false});
  $('graph').addEventListener('pointerup',()=>{drag=null;});$('graph').addEventListener('pointercancel',()=>{drag=null;});
  $('methodBtn').addEventListener('click',()=>$('method').showModal());$('closeMethod').addEventListener('click',()=>$('method').close());
+ $('method').addEventListener('click',e=>{if(e.target===$('method'))$('method').close();});
  renderSources();update();
  const registry=document.modelContext;
  if(registry?.registerTool){
